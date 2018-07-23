@@ -1,0 +1,384 @@
+///              MP3 PLAYER PROJECT
+//////////////////////////////////////////
+ /*
+  * @author: Antonio Arceo,Johnathan Hutchins, Chris West, Meimin Xiao
+  *
+  * Last updated: 7-21-2018 by Xiao
+  * 
+  */
+//  #include "Arduino.h"
+  #include "SoftwareSerial.h"
+  #include "DFRobotDFPlayerMini.h"   //use library DFRobotDFPlayerMini.h (main purpose: use the method readCurrentFileNumber())
+  #include <LiquidCrystal.h>
+  
+  SoftwareSerial mySerial(10, 11);
+  # define Start_Byte 0x7E
+  # define Version_Byte 0xFF
+  # define Command_Length 0x06
+  # define End_Byte 0xEF
+  # define Acknowledge 0x00 //Returns info with command 0x41 [0x01: info, 0x00: no info]
+  # define ACTIVATED LOW
+  // include the library code:
+  //#include <SimpleTimer.h>
+ 
+  const int rs = 12, en = 9, d4 = 5, d5 = 4, d6 = 3, d7 = 2;
+  LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
+  
+  DFRobotDFPlayerMini myDFPlayer; //create a new object myDFPlayer from library DFRobotDFPlayerMini
+  
+  String songNameArray[10]={"AC/DC - Highway To Hell","Froggy Fresh - Dunked On","Super Mario Bros ---KOKO","Dual Core - All The Things","Marc Ronson - Uptown Funk ft. Bruno Mars",   
+        "Maroon 5 - Sugar KOKO","Wiz Khalifa - See You Again","Queen - Bohemian Rhapsody","Pink Floyd - Time","Led Zeppelin - Good Times Bad Times"}; //song name's  
+  int buttonNext = 6;           //pin declaration
+  int buttonPause = 7;          //pin declaration
+  int buttonPrevious = 8;       //pin declaration
+  boolean isPlaying = false;    //used for our pause/play
+  int songDuration=millis();    //does nothing useful yet.
+  int pauseDuration=0;          //does nothing useful yet.
+  int pausedMillis;           //Keeps track of the exact time the paused button was pushed.
+  int index=0;                  //index for our arrays.
+  int displayTime = 0;
+  int minsCount = 0;
+  int secsCount = 0;
+  int fileNumber = 0;
+  boolean firstTime = true;     //keeps track of IF we should go through scroll animtaion, see code below for further expl.
+  //make barchart custom characters for random barchart begin----->
+  byte b0[8] = {
+    0b00000,
+    0b00000,
+    0b00000,
+    0b00000,
+    0b00000,
+    0b00000,
+    0b00000,
+    0b11111
+  };
+  byte b1[8] = {
+    0b00000,
+    0b00000,
+    0b00000,
+    0b00000,
+    0b00000,
+    0b00000,
+    0b11111,
+    0b11111
+  };
+  byte b2[8] = {
+    0b00000,
+    0b00000,
+    0b00000,
+    0b00000,
+    0b00000,
+    0b11111,
+    0b11111,
+    0b11111
+  };
+  byte b3[8] = {
+    0b00000,
+    0b00000,
+    0b00000,
+    0b00000,
+    0b11111,
+    0b11111,
+    0b11111,
+    0b11111
+  };
+  byte b4[8] = {
+    0b00000,
+    0b00000,
+    0b00000,
+    0b11111,
+    0b11111,
+    0b11111,
+    0b11111,
+    0b11111
+  };
+  byte b5[8] = {
+    0b00000,
+    0b00000,
+    0b11111,
+    0b11111,
+    0b11111,
+    0b11111,
+    0b11111,
+    0b11111
+  };
+  byte b6[8] = {
+    0b00000,
+    0b11111,
+    0b11111,
+    0b11111,
+    0b11111,
+    0b11111,
+    0b11111,
+    0b11111
+  };
+  byte b7[8] = {
+    0b11111,
+    0b11111,
+    0b11111,
+    0b11111,
+    0b11111,
+    0b11111,
+    0b11111,
+    0b11111
+  };// make barchart custom characters for random barchart end<-----
+  
+ // last shown barchart value for random barchart
+ int BarLastBlocks = 0;
+  
+ void setup () {
+  //declaring what we want to do with our pins.
+  //input means chip will recieve data
+  //High means on, low means off.
+  pinMode(buttonPause, INPUT);
+  digitalWrite(buttonPause,HIGH);
+  pinMode(buttonNext, INPUT);
+  digitalWrite(buttonNext,HIGH);
+  pinMode(buttonPrevious, INPUT);
+  digitalWrite(buttonPrevious,HIGH);
+  
+  mySerial.begin (9600);    //convention says we start at 9600.
+  // should come with below code, otherwise LCD gonna be really weird displaying because we import a method from library DFRobotDFPlayerMini---->
+  Serial.begin(115200);
+  Serial.println();
+  Serial.println(F("DFRobot DFPlayer Mini Demo"));
+  Serial.println(F("Initializing DFPlayer ... (May take 3~5 seconds)"));
+  
+  if (!myDFPlayer.begin(mySerial)) {  //Use softwareSerial to communicate with mp3.
+    Serial.println(F("Unable to begin:"));
+    Serial.println(F("1.Please recheck the connection!"));
+    Serial.println(F("2.Please insert the SD card!"));
+    while(true);
+  }
+  Serial.println(F("DFPlayer Mini online."));
+  //<----
+  
+  playFirst();              //starts the party off right away.
+  isPlaying = true;
+/* code for the LCD */
+ // set up the LCD's number of columns and rows:
+  lcd.begin(16, 2); //declares that we are using all 16 wide slots and all 2 rows of the LCD.
+  lcd.clear();      //clears any bullshit, good programming practice.
+ }
+ 
+ void loop () { 
+  // print the number of seconds since reset:      
+  // (note: line 1 is the second row, since counting begins with 0):
+  lcd.setCursor(0, 0); //start printing at the bottom left
+  fileNumber = myDFPlayer.readCurrentFileNumber(); //myDFPlayer.readCurrentFileNumber() keep track of the currentFileNumber
+  lcd.print(songNameArray[fileNumber-1]);   //gets song title of whatever the current index is on.
+  displayTime = ((millis() - songDuration - pauseDuration)/1000);
+  //break displayTime into minutes and seconds 
+  minsCount = displayTime / 60;
+  secsCount = displayTime % 60;
+  if(isPlaying == true){
+  //display the song number 
+  if(fileNumber >=10){
+     lcd.setCursor(0, 1); 
+     lcd.print(fileNumber);
+   }else{
+     lcd.setCursor(0, 1); 
+     lcd.print("0");
+     lcd.setCursor(1, 1); 
+     lcd.print(fileNumber);
+   }
+ 
+   // run the randomBarchartDisplay method 
+   randomBarchartDisplay();
+   //if minutes is above 10, the minutes# start with column 11+1
+   if (minsCount>=10){
+     lcd.setCursor(11, 1); 
+     lcd.print(minsCount); 
+   }else{
+     //else minutes is below 10, there is a 0 ocupy on column 11+1 and the minutes# start with column 12+1
+     lcd.setCursor(11, 1); 
+     lcd.print("0"); 
+     lcd.setCursor(12, 1); 
+     lcd.print(minsCount);
+   }
+   //display ":" on column 12+1
+   lcd.setCursor(13, 1); 
+   lcd.print(":"); 
+   //if seconds is above 10, the seconds# start with column 14+1
+   if (secsCount>=10){
+     lcd.setCursor(14, 1); 
+     lcd.print(secsCount); 
+   }else{
+     //else seconds is below 10, there is a 0 ocupy on column 14+1 and the seconds# start with column 15+1
+     lcd.setCursor(14, 1); 
+     lcd.print("0"); 
+     lcd.setCursor(15, 1); 
+     lcd.print(secsCount); 
+   }
+  }// mins:secs display end<-----
+ 
+ /*This loop scrolls through the title the first time through. 
+  *only does once because if it continually does it, you get stuck in 
+  *in the for-loop and can't change songs.
+  */
+ if(firstTime == true){ 
+   for(int i = 0; i < songNameArray[index].length()-16; i++){  //gets the length of the string that is the title
+    lcd.scrollDisplayLeft();                                    //scrolls left that many slots - 16 as that is the length of the screen
+    delay(350);                                                 //waits .35 seconds before moving next slot over
+   }
+   firstTime = false;                                           //sets to false so we only hit this loop every time we come to it.
+   lcd.clear();                                                 //clears the screen so we can display song title again without scrolling.
+ }
+ if (digitalRead(buttonPause) == ACTIVATED){
+    if(isPlaying){
+      pause();
+      isPlaying = false;
+    }else{
+      isPlaying = true;
+      play();
+    }
+  }
+ if (digitalRead(buttonNext) == ACTIVATED){
+    if(isPlaying){
+      playNext();
+    }
+  }
+  
+   if (digitalRead(buttonPrevious) == ACTIVATED){
+    if(isPlaying){
+      playPrevious();
+    }
+   }
+}// end of loop() --- below are where methods belong, nothing else.
+/*for increasing the song and the song title*/
+void increaseIndex(){
+  //wait for testing to see if (-)
+  index++;
+  if (index == 10){
+   index = 0;
+  }
+} 
+/*
+ * decreases the index -- for when we hit previous song.
+ * Used to display the song name as of now.
+ */
+void decreaseIndex(){
+  index--;
+  if (index < 0){
+    index = 9;
+  }
+}
+/*
+ *On initial boot, this will play first song on the SD card.
+*/
+void playFirst(){
+  execute_CMD(0x3F, 0, 0);
+  setVolume(30);
+  execute_CMD(0x11,0,1); 
+}
+void pause(){
+  pausedMillis = millis();                              //example pausedMillis = 10 - because we waited 10 before we hit pause button so hypothetically millis = 11
+  execute_CMD(0x0E,0,0);
+  randomBarchartStop();
+  delay(500);
+}
+void play(){
+  //need to add the logic of where the pause time is at and the song duration
+  pauseDuration = millis() - pausedMillis;         //example pausedDuration = 31 - 11 - because we waited 20 before we hit play                calculates the current system time minus the amount of paused time.
+  //songDuration = pausedMillis + startSongDuration;      //example songDuration = 21 + 1 - because we add the paused time with the start time        calculates the current system time plus the exact start time of the start of the song.
+  execute_CMD(0x0D,0,1); 
+  delay(500);
+}
+void playNext(){
+  songDuration = millis();
+  pauseDuration = 0;
+  firstTime = true;       //sets firstTime to true so we can do the scroll animation for song title.
+  increaseIndex();
+  execute_CMD(0x01,0,1);
+  randomBarchartDisplay();
+  delay(500);
+}
+void playPrevious(){
+  songDuration = millis();
+  pauseDuration = 0;
+  decreaseIndex();
+  firstTime = true;     //sets firstTime to true so we can do the scroll animation for song title.
+  execute_CMD(0x02,0,1);
+  randomBarchartDisplay();
+  delay(500);
+}
+void setVolume(int volume){
+  execute_CMD(0x06, 0, volume); // Set the volume (0x00~0x30)
+  delay(1000);
+}
+// random barchart stop begin-----> when pause button press, show this
+void randomBarchartStop(){
+ lcd.createChar(1, b0);
+ lcd.setCursor(0, 1);
+ for (int j=0; j<9; j++) {
+   lcd.write(1);
+ }
+}// random barchart stop end<-----
+// random barchart display method begin----->
+void randomBarchartDisplay(){
+ for (int i=0; i<1; i++) {     //the i value could only set 1 somehow, otherwise the time display will delay
+  DrawBar(random(55)); //use 11 colum barcharts first
+   delay(140);
+ }
+}// random barchart display method end<-----
+//draw method for random barchart begin ------>
+void DrawBar(int value) {
+  int fullblocks;
+  int rightblock;
+  int cursorPos;
+    
+  // create a new character----->
+  lcd.createChar(1, b0);
+  lcd.createChar(2, b1);
+  lcd.createChar(3, b2);
+  lcd.createChar(4, b3);  
+  lcd.createChar(5, b4);
+  lcd.createChar(6, b5);
+  lcd.createChar(7, b6);
+  lcd.createChar(8, b7);
+  // create a new character end<-----
+  
+  lcd.setCursor(2, 1);
+  // check value size and reset if neccessary
+  if (value < 10) value = 10;
+  if (value > 55) value = 55;
+  // calulate number of full blocks
+  fullblocks=0;
+  while (fullblocks*5 < value) {
+    fullblocks++;
+  }
+  fullblocks--;
+  if (fullblocks < 2) fullblocks = 2;
+  rightblock = value - fullblocks*5 + 1;
+  cursorPos = fullblocks;
+  if (BarLastBlocks < fullblocks) cursorPos = BarLastBlocks;
+  lcd.setCursor(cursorPos, 1);
+  for (int i=BarLastBlocks; i<fullblocks; i++) {
+    lcd.write(8);
+    delay(5);
+  }
+  lcd.setCursor(fullblocks, 1);
+  lcd.write(rightblock);
+  for (int j=fullblocks+1; j<11; j++) {
+    lcd.write(1);
+    delay(5);
+  }
+  BarLastBlocks = fullblocks;
+}
+
+// draw method for random barchart end<---------
+/*
+ * Does some stuff with the sound. We will leave this alone for the time being.
+ */
+void execute_CMD(byte CMD, byte Par1, byte Par2){
+  // Excecute the command and parameters
+  // Calculate the checksum (2 bytes)
+  word checksum = -(Version_Byte + Command_Length + CMD + Acknowledge + Par1 + Par2);
+  // Build the command line
+  byte Command_line[10] = { Start_Byte, Version_Byte, Command_Length, CMD, Acknowledge,
+  Par1, Par2, highByte(checksum), lowByte(checksum), End_Byte};
+  //Send the command line to the module
+  for (byte k=0; k<10; k++){
+  mySerial.write( Command_line[k]);
+  }
+}
